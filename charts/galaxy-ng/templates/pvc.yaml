@@ -1,0 +1,16 @@
+{{- if .Values.pvcBackend.enabled }}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: galaxy-ng-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.pvcBackend.size }}
+  {{- with .Values.pvcBackend.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}

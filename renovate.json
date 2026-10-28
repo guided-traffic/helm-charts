@@ -1,0 +1,82 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Europe/Berlin",
+  "semanticCommits": "enabled",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 5,
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "assignees": [
+    "hans-fischer"
+  ],
+  "platformAutomerge": true,
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "helm-values": {
+    "managerFilePatterns": [
+      "/^charts/[^/]+/values\\.ya?ml$/"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "An image update changes the chart, so it bumps the chart version next to the values file (release.yml publishes every version without a git tag). The branch prefix keeps each branch to one chart: bumpVersions resolves packageFileDir from the first update in a branch only.",
+      "matchManagers": [
+        "helm-values"
+      ],
+      "additionalBranchPrefix": "{{parentDir}}-",
+      "bumpVersions": [
+        {
+          "name": "chart version",
+          "filePatterns": [
+            "{{packageFileDir}}/Chart.yaml"
+          ],
+          "matchStrings": [
+            "(?:^|\\n)version:\\s*(?<version>\\S+)"
+          ],
+          "bumpType": "{{#if isMajor}}minor{{else}}patch{{/if}}"
+        }
+      ]
+    },
+    {
+      "description": "galaxy-ng: upstream publishes main-branch builds several times a week, tracked as latest@digest. Collect both images into one PR per week instead of a chart release per upstream commit.",
+      "matchPackageNames": [
+        "quay.io/ansible/galaxy-ng",
+        "quay.io/ansible/galaxy-ui"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "galaxy-ng images",
+      "schedule": [
+        "* 0-8 * * 1"
+      ]
+    },
+    {
+      "description": "Chart tooling pinned in the Makefile",
+      "matchFileNames": [
+        "Makefile"
+      ],
+      "groupName": "chart tooling"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Tool versions in the Makefile: a '# renovate:' comment on the line above each *_VERSION := assignment",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?\\s*\\n[A-Z0-9_]+_VERSION\\s*:=\\s*(?<currentValue>\\S+)"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
+    }
+  ]
+}

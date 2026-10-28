@@ -1,0 +1,70 @@
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: galaxy-ng-web
+  labels:
+    app: galaxy-ng-web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: galaxy-ng-web
+  template:
+    metadata:
+      name: galaxy-ng-web
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-web.yaml") . | sha256sum }}
+      labels:
+        app: galaxy-ng-web
+        {{- with .Values.web.podExtraLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      containers:
+        - name: galaxy-ng-web
+          image: {{ include "galaxy-ng.image" .Values.web.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /ui/
+              port: 8080
+            initialDelaySeconds: 50
+            periodSeconds: 100
+          livenessProbe:
+            httpGet:
+              path: /ui/
+              port: 8080
+            initialDelaySeconds: 150
+            periodSeconds: 200
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+
+      # Todo Init Conatiners with
+      # - official Collections Sync: django-admin task-scheduler --id dab_sync --interval 15 --path "galaxy_ng.app.tasks.resource_sync.run" || true
+      # - bundel_ca setup
+      # - gpg sigining secrets setup
+      initContainers:
+        - name: wait-for-content-service
+          image: {{ include "galaxy-ng.image" .Values.web.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          command: ['sh', '-c', 'until curl -s http://galaxy-ng-content-svc:24816/pulp/content/; do echo waiting for content service; sleep 2; done;']
+      restartPolicy: Always
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: 'galaxy-web-nginx-cm'
+      {{- if .Values.imagePullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecretName }}
+      {{- end}}

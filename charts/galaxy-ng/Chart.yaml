@@ -1,0 +1,24 @@
+apiVersion: v2
+name: galaxy-ng
+description: Galaxy NG, the Ansible collection server, with an external PostgreSQL and an optional Redis/Valkey cache
+type: application
+# Source of truth for the release: a version without a git tag galaxy-ng-<version>
+# is packaged and pushed by .github/workflows/release.yml. Bump it with every
+# change to this directory (CI enforces it); Renovate bumps it for image updates.
+version: 2.0.0
+# quay.io/ansible/galaxy-ng publishes only builds of the upstream main branch
+# (8-character commit tags plus latest), no release tags.
+appVersion: "main"
+home: https://github.com/guided-traffic/helm-charts/tree/main/charts/galaxy-ng
+sources:
+  # The first entry becomes the OCI annotation org.opencontainers.image.source,
+  # which links the ghcr.io package to this repository.
+  - https://github.com/guided-traffic/helm-charts
+  - https://github.com/ansible/galaxy_ng
+keywords:
+  - ansible
+  - galaxy
+  - pulp
+maintainers:
+  - name: Hans Fischer
+    email: mail@hans-fischer.com

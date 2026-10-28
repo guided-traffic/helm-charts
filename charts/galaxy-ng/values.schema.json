@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "galaxy-ng values",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": {
+        "image": { "$ref": "#/definitions/image" },
+        "replicas": { "type": "integer", "minimum": 0 },
+        "podExtraLabels": { "$ref": "#/definitions/labels" },
+        "resources": { "type": "object" }
+      }
+    }
+  },
+  "properties": {
+    "global": { "type": "object" },
+    "adminPassword": { "type": "string" },
+    "db_fields_encryption_key": { "type": "string" },
+    "api": { "$ref": "#/definitions/component" },
+    "content": { "$ref": "#/definitions/component" },
+    "web": { "$ref": "#/definitions/component" },
+    "worker": { "$ref": "#/definitions/component" },
+    "imagePullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] },
+    "imagePullSecretName": { "type": "string" },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "domain": { "type": "string" },
+        "tlsSecret": { "type": "string" },
+        "extraAnnotations": { "$ref": "#/definitions/labels" },
+        "extraLabels": { "$ref": "#/definitions/labels" }
+      }
+    },
+    "ldap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "settings": { "type": "string" }
+      }
+    },
+    "s3_backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": { "type": "string" },
+        "region": { "type": "string" },
+        "bucket_name": { "type": "string" },
+        "secret_name": { "type": "string" }
+      }
+    },
+    "pvcBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "storageClassName": { "type": "string" },
+        "size": { "type": "string" }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "name"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "port": { "type": ["string", "integer"] },
+        "secret_name": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "port": { "type": ["string", "integer"] },
+        "db": { "type": "integer", "minimum": 0 },
+        "secret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key": { "type": "string" }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "caSecretName": { "type": "string" },
+            "caCertsPath": { "type": "string" }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "additionalSettings": { "type": "string" }
+  }
+}

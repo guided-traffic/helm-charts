@@ -1,0 +1,140 @@
+---
+# Galaxy NG — every key is documented in README.md and validated by
+# values.schema.json (unknown keys are rejected).
+
+## Secrets the chart can create. Leave unset to use existing Secrets:
+##   galaxy-ng-admin-password            keys: user, password
+##   galaxy-ng-db-fields-encryption-sec  key:  database_fields.symmetric.key
+# adminPassword: ""
+# db_fields_encryption_key: ""
+
+# Images: upstream publishes only main-branch builds, so the default tracks
+# `latest` pinned by digest (Renovate moves the digest). Pin a commit tag
+# (e.g. "71e98059") in production.
+api:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: latest@sha256:3954524845cabd9de267cd656f2a6987406c8867a8433a8ebfdd829b0dae91b3
+  replicas: 1
+  podExtraLabels: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 3000Mi
+    limits:
+      memory: 4000Mi
+
+content:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: latest@sha256:3954524845cabd9de267cd656f2a6987406c8867a8433a8ebfdd829b0dae91b3
+  replicas: 1
+  podExtraLabels: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 500Mi
+    limits:
+      memory: 750Mi
+
+web:
+  image:
+    repository: quay.io/ansible/galaxy-ui
+    tag: latest@sha256:f6279845665f634ee2cdbc910dd2e68205ad1ee6adc86228681127ea5f0bd66a
+  replicas: 1
+  podExtraLabels: {}
+  resources:
+    requests:
+      cpu: 25m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+
+worker:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: latest@sha256:3954524845cabd9de267cd656f2a6987406c8867a8433a8ebfdd829b0dae91b3
+  replicas: 1
+  podExtraLabels: {}
+  resources:
+    requests:
+      cpu: 200m
+      memory: 5000Mi
+    limits:
+      memory: 7000Mi
+
+imagePullPolicy: IfNotPresent
+# Name of an existing image pull Secret, used by all pods.
+imagePullSecretName: ""
+
+ingress:
+  enabled: false
+  className: ""
+  # Public hostname; also used for CONTENT_ORIGIN, CSRF and CORS in settings.py.
+  domain: ""
+  tlsSecret: "galaxy-ng-tls"
+  extraAnnotations: {}
+  extraLabels: {}
+
+# LDAP login (django-auth-ldap). Off: only local Django users can log in.
+# The bind password is read from the environment variable
+# AUTH_LDAP_BIND_PASSWORD — put it into the Secret galaxy-ng-secrets.
+ldap:
+  enabled: false
+  # Python assignments appended to settings.py, see
+  # https://django-auth-ldap.readthedocs.io/en/latest/reference.html
+  settings: ""
+
+s3_backend:
+  enabled: false
+  endpoint: ""
+  region: ""
+  bucket_name: ""
+  # Secret with the keys access-key-id and secret-access-key
+  secret_name: s3-secret
+
+# Collection artifacts on a ReadWriteMany volume, shared by api, content and
+# worker.
+pvcBackend:
+  enabled: true
+  # empty: the cluster's default StorageClass
+  storageClassName: ""
+  size: 20Gi
+
+database:
+  host: galaxy-ng-postgres
+  name: galaxy
+  port: "5432"
+  # Either a Secret with the keys username and password ...
+  secret_name: galaxy-ng-postgres-credentials
+  # ... or inline credentials (used only when secret_name is empty)
+  # username: ""
+  # password: ""
+
+redis:
+  enabled: true
+  host: galaxy-ng-valkey
+  port: 6379
+  db: 0
+  # Secret holding the password; an empty name connects without a password.
+  secret:
+    name: galaxy-ng-valkey
+    key: password
+  tls:
+    enabled: false
+    # CA bundle the client verifies the server certificate with:
+    #   caSecretName set  -> key ca.crt of that Secret, mounted into the pods
+    #   caCertsPath set   -> a file already present in the image or mounted
+    #   both empty        -> the image's default trust store
+    caSecretName: ""
+    caCertsPath: ""
+
+# NetworkPolicies admitting web -> api and web -> content. Every other
+# client of the api and content pods needs its own policy.
+networkPolicy:
+  enabled: true
+
+# Python appended verbatim to the end of settings.py.
+additionalSettings: ""
+# additionalSettings: |
+#   LOGGING = {"dynaconf_merge": True, "loggers": {'': {'handlers': ['console'], 'level': 'DEBUG'}}}

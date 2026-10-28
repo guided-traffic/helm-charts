@@ -1,0 +1,6 @@
+# Tools downloaded by `make tools` (versions pinned in the Makefile)
+/.tools/
+# Packaged charts from `make package`
+/.dist/
+*.tgz
+.DS_Store

@@ -1,0 +1,35 @@
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-from-web
+spec:
+  podSelector:
+    matchLabels:
+      app: galaxy-ng-api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: galaxy-ng-web
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: content-from-web
+spec:
+  podSelector:
+    matchLabels:
+      app: galaxy-ng-content
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: galaxy-ng-web
+{{- end }}

@@ -1,0 +1,82 @@
+name: Renovate Dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - debug
+          - info
+          - warn
+          - error
+      dryRun:
+        description: 'Dry run (no changes made)'
+        required: false
+        type: boolean
+        default: false
+
+  # Weekdays 05:00 UTC (06:00 CET, 07:00 CEST)
+  schedule:
+    - cron: '0 5 * * 1-5'
+
+  # Rebase and automerge right after main moves
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+  DRY_RUN: ${{ inputs.dryRun || false }}
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    name: Renovate Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      # GitHub App installation token (guided-traffic-automation), scoped to
+      # this repository; expires after 1 h and is revoked at the end of the
+      # job. Unlike GITHUB_TOKEN, its pull requests and merges trigger the CI
+      # and release workflows.
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@2804199d260ad00c1fae0e9e842888369391c776 # v46.3.10
+        with:
+          configurationFile: renovate.json
+          token: ${{ steps.app-token.outputs.token }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          LOG_LEVEL: ${{ env.LOG_LEVEL }}
+          RENOVATE_DRY_RUN: ${{ env.DRY_RUN }}
+          RENOVATE_REQUIRE_CONFIG: 'required'
+
+      - name: Renovate summary
+        if: always()
+        run: |
+          {
+            echo "## Renovate Run Summary"
+            echo "- **Log Level**: ${LOG_LEVEL}"
+            echo "- **Dry Run**: ${DRY_RUN}"
+            echo "- **Triggered by**: ${{ github.event_name }}"
+          } >> "$GITHUB_STEP_SUMMARY"

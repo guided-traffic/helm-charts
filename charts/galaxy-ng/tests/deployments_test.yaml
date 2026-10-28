@@ -1,0 +1,179 @@
+suite: deployments
+# The checksum/config annotations include the ConfigMap templates, so they
+# have to be part of the suite; every assertion names its template.
+templates:
+  - configmap.yaml
+  - configmap-web.yaml
+  - deployment-api.yaml
+  - deployment-content.yaml
+  - deployment-worker.yaml
+  - deployment-web.yaml
+tests:
+  - it: keeps the selectors of chart 1.x, so an upgrade happens in place
+    template: deployment-api.yaml
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app: galaxy-ng-api
+
+  - it: builds the image reference from repository and tag
+    set:
+      api.image:
+        repository: quay.io/ansible/galaxy-ng
+        tag: "71e98059"
+    template: deployment-api.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/ansible/galaxy-ng:71e98059
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: quay.io/ansible/galaxy-ng:71e98059
+
+  - it: renders the web image from web.image
+    set:
+      web.image.tag: d8ed4929
+    template: deployment-web.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/ansible/galaxy-ui:d8ed4929
+
+  - it: sets no chart-specific label besides app and podExtraLabels
+    set:
+      api.podExtraLabels:
+        example.com/role: api
+    template: deployment-api.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app: galaxy-ng-api
+            example.com/role: api
+
+  - it: mounts the Redis CA Secret named in values into api, content and worker
+    set:
+      redis.tls.enabled: true
+      redis.tls.caSecretName: valkey-ca
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+            secret:
+              secretName: valkey-ca
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        template: deployment-api.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /etc/pulp/redis-ca
+            name: redis-ca
+            readOnly: true
+        template: deployment-api.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+            secret:
+              secretName: valkey-ca
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        template: deployment-content.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /etc/pulp/redis-ca
+            name: redis-ca
+            readOnly: true
+        template: deployment-content.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+            secret:
+              secretName: valkey-ca
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        template: deployment-worker.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /etc/pulp/redis-ca
+            name: redis-ca
+            readOnly: true
+        template: deployment-worker.yaml
+
+  - it: mounts no CA Secret when TLS uses a path
+    set:
+      redis.tls.enabled: true
+      redis.tls.caCertsPath: /etc/ssl/certs/ca-bundle.crt
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+          any: true
+        template: deployment-api.yaml
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+          any: true
+        template: deployment-content.yaml
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: redis-ca
+          any: true
+        template: deployment-worker.yaml
+
+  - it: injects REDIS_PASSWORD from the named Secret
+    template: deployment-worker.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: galaxy-ng-valkey
+                key: password
+
+  - it: sets no REDIS_PASSWORD without a Secret name
+    set:
+      redis.secret.name: ""
+    template: deployment-worker.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: uses the image pull Secret in every Deployment
+    set:
+      imagePullSecretName: registry-credentials
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: registry-credentials
+        template: deployment-api.yaml
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: registry-credentials
+        template: deployment-content.yaml
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: registry-credentials
+        template: deployment-worker.yaml
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: registry-credentials
+        template: deployment-web.yaml

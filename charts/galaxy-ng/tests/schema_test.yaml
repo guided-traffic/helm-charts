@@ -1,0 +1,24 @@
+suite: values schema
+templates:
+  - configmap.yaml
+tests:
+  - it: rejects the chart 1.x image keys (api.tag)
+    set:
+      api.tag: "71e98059"
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'tag' not allowed"
+
+  - it: rejects the chart 1.x TLS string "True"
+    set:
+      redis.tls.enabled: "True"
+    asserts:
+      - failedTemplate:
+          errorPattern: "/redis/tls/enabled': got string, want boolean"
+
+  - it: rejects the chart 1.x key authLdapSettings
+    set:
+      authLdapSettings: "AUTH_LDAP_SERVER_URI = 'ldap://example'"
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'authLdapSettings' not allowed"

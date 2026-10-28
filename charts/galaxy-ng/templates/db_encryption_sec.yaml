@@ -1,0 +1,10 @@
+{{- if .Values.db_fields_encryption_key }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: 'galaxy-ng-db-fields-encryption-sec'
+data:
+  database_fields.symmetric.key: |
+    {{ .Values.db_fields_encryption_key | b64enc }}
+{{- end}}

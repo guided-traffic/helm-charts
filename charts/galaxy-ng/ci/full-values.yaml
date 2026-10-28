@@ -1,0 +1,77 @@
+# Every optional feature switched on; rendered by `make lint` and
+# `make kubeconform`. Example values only.
+adminPassword: example-admin-password
+db_fields_encryption_key: ZXhhbXBsZS1rZXktZXhhbXBsZS1rZXktZXhhbXBsZS0=
+
+api:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: "71e98059"
+  podExtraLabels:
+    example.com/role: api
+content:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: "71e98059"
+web:
+  image:
+    repository: quay.io/ansible/galaxy-ui
+    tag: "d8ed4929"
+worker:
+  image:
+    repository: quay.io/ansible/galaxy-ng
+    tag: "71e98059"
+
+imagePullSecretName: registry-credentials
+
+ingress:
+  enabled: true
+  className: nginx
+  domain: galaxy.example.com
+  extraAnnotations:
+    cert-manager.io/cluster-issuer: example-issuer
+  extraLabels:
+    example.com/exposed: "true"
+
+ldap:
+  enabled: true
+  settings: |
+    AUTH_LDAP_SERVER_URI = 'ldaps://ldap.example.com:636'
+    AUTH_LDAP_BIND_DN = 'uid=galaxy,ou=services,dc=example,dc=com'
+    AUTH_LDAP_USER_SEARCH = LDAPSearch(
+      'ou=people,dc=example,dc=com',
+      ldap.SCOPE_ONELEVEL,
+      '(uid=%(user)s)',
+    )
+    AUTH_LDAP_GROUP_SEARCH = LDAPSearch(
+      'ou=groups,dc=example,dc=com',
+      ldap.SCOPE_ONELEVEL,
+      '(objectClass=groupOfNames)',
+    )
+    AUTH_LDAP_GROUP_TYPE = NestedGroupOfNamesType()
+
+s3_backend:
+  enabled: true
+  endpoint: https://s3.example.com
+  region: eu-central-1
+  bucket_name: galaxy
+  secret_name: galaxy-s3
+
+pvcBackend:
+  enabled: true
+  storageClassName: example-rwx
+  size: 50Gi
+
+redis:
+  enabled: true
+  host: galaxy-valkey
+  port: 16379
+  secret:
+    name: galaxy-valkey
+    key: password
+  tls:
+    enabled: true
+    caSecretName: galaxy-valkey-tls
+
+additionalSettings: |
+  GALAXY_ENABLE_UNAUTHENTICATED_COLLECTION_ACCESS = True

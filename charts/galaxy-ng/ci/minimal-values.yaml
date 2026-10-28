@@ -1,0 +1,18 @@
+# Smallest working setup: inline database credentials, no cache, no volume,
+# no NetworkPolicies. Rendered by `make lint` and `make kubeconform`.
+# Example values only.
+database:
+  host: postgres.example.svc
+  name: galaxy
+  secret_name: ""
+  username: galaxy
+  password: example-password
+
+redis:
+  enabled: false
+
+pvcBackend:
+  enabled: false
+
+networkPolicy:
+  enabled: false

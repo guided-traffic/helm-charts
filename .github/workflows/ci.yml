@@ -1,0 +1,41 @@
+name: Chart CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Required status check on main (docs/developer/release.md): Renovate's
+    # automerge waits for it.
+    name: lint-test
+    # GitHub-hosted on purpose: this repository is public, and a pull request
+    # from a fork would run its code on a self-hosted runner.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # full history and tags: check-version diffs against the base
+          # branch and looks up release tags
+          fetch-depth: 0
+
+      - name: Install pinned tools
+        run: make tools
+
+      - name: Lint, unit tests, schema validation
+        run: make test
+
+      - name: Changed charts carry a new version
+        if: github.event_name == 'pull_request'
+        run: make check-version BASE_REF=origin/${{ github.base_ref }}

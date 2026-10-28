@@ -1,0 +1,212 @@
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: galaxy-ng-api
+  labels:
+    app: galaxy-ng-api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: galaxy-ng-api
+  template:
+    metadata:
+      name: galaxy-ng-api
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        app: galaxy-ng-api
+        {{- with .Values.api.podExtraLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: galaxy-ng-api
+          image: {{ include "galaxy-ng.image" .Values.api.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+          - start-api
+          envFrom:
+            - secretRef:
+                name: galaxy-ng-secrets
+          {{- if and .Values.redis.enabled .Values.redis.secret.name }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.secret.name }}
+                  key: {{ .Values.redis.secret.key }}
+          {{- end }}
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /api/galaxy/pulp/api/v3/status/
+              port: 8000
+            initialDelaySeconds: 50
+            periodSeconds: 100
+          livenessProbe:
+            httpGet:
+              path: /api/galaxy/pulp/api/v3/status/
+              port: 8000
+            initialDelaySeconds: 150
+            periodSeconds: 200
+          volumeMounts:
+            - mountPath: /etc/pulp/settings.py
+              subPath: settings.py
+              name: galaxy-ng-settings
+              readOnly: true
+            - name: galaxy-ng-db-fields-encryption
+              mountPath: "/etc/pulp/certs/database_fields.symmetric.key"
+              subPath: database_fields.symmetric.key
+              readOnly: true
+            {{- if .Values.database.secret_name }}
+            - mountPath: /etc/pulp/db-credentials
+              name: db-credentials
+              readOnly: true
+            {{- end}}
+            {{- if .Values.s3_backend.enabled }}
+            - mountPath: /etc/pulp/s3-credentials
+              name: s3-credentials
+              readOnly: true
+            {{- end}}
+            {{- if .Values.pvcBackend.enabled }}
+            - mountPath: /var/lib/pulp/media
+              name: galaxy-ng-pvc
+            {{- end}}
+            {{- if include "galaxy-ng.redisCaMounted" . }}
+            - mountPath: /etc/pulp/redis-ca
+              name: redis-ca
+              readOnly: true
+            {{- end}}
+      # Todo Init Conatiners with
+      # - official Collections Sync: django-admin task-scheduler --id dab_sync --interval 15 --path "galaxy_ng.app.tasks.resource_sync.run" || true
+      # - bundel_ca setup
+      # - gpg sigining secrets setup
+      initContainers:
+        # {{- if .Values.pvcBackend.enabled }}
+        # - name: copy-media
+        #   image: busybox
+        #   command: ['sh', '-c', 'if [[ ! -d /data/media ]]; then cp -r /var/lib/pulp/ /data/; fi']
+        #   volumeMounts:
+        #     - mountPath: /data
+        #       name: galaxy-ng-pvc
+        # {{- end}}
+        - name: run-migrations
+          image: {{ include "galaxy-ng.image" .Values.api.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - pulpcore-manager migrate --noinput
+          envFrom:
+            - secretRef:
+                name: galaxy-ng-secrets
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /etc/pulp/settings.py
+              subPath: settings.py
+              name: galaxy-ng-settings
+              readOnly: true
+            - name: galaxy-ng-db-fields-encryption
+              mountPath: "/etc/pulp/certs/database_fields.symmetric.key"
+              subPath: database_fields.symmetric.key
+              readOnly: true
+            {{- if .Values.database.secret_name }}
+            - mountPath: /etc/pulp/db-credentials
+              name: db-credentials
+              readOnly: true
+            {{- end}}
+            {{- if .Values.s3_backend.enabled }}
+            - mountPath: /etc/pulp/s3-credentials
+              name: s3-credentials
+              readOnly: true
+            {{- end}}
+        - name: set-admin-password
+          image: {{ include "galaxy-ng.image" .Values.api.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - pulpcore-manager reset-admin-password --password `cat /etc/pulp/admin-password/password`
+          envFrom:
+            - secretRef:
+                name: galaxy-ng-secrets
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /etc/pulp/settings.py
+              subPath: settings.py
+              name: galaxy-ng-settings
+              readOnly: true
+            - name: galaxy-ng-db-fields-encryption
+              mountPath: "/etc/pulp/certs/database_fields.symmetric.key"
+              subPath: database_fields.symmetric.key
+              readOnly: true
+            {{- if .Values.database.secret_name }}
+            - mountPath: /etc/pulp/db-credentials
+              name: db-credentials
+              readOnly: true
+            {{- end}}
+            {{- if .Values.s3_backend.enabled }}
+            - mountPath: /etc/pulp/s3-credentials
+              name: s3-credentials
+              readOnly: true
+            {{- end}}
+            - mountPath: /etc/pulp/admin-password
+              name: admin-password
+              readOnly: true
+      restartPolicy: Always
+      volumes:
+      # TODO: add settings/secrets
+      # database_fields.symmetric.key -- "./assets/certs:/etc/pulp/certs:z"
+      # gpg-file-storage, collection_sign.sh, signing_service.gpg
+      # bundle-ca.crt
+      # container_auth_public_key.pem
+        - name: galaxy-ng-settings
+          configMap:
+            # settings.py
+            name: galaxy-ng-cm
+        - name: galaxy-ng-db-fields-encryption
+          secret:
+            secretName: galaxy-ng-db-fields-encryption-sec
+            items:
+              - path: database_fields.symmetric.key
+                key: database_fields.symmetric.key
+
+        {{- if .Values.database.secret_name }}
+        - name: db-credentials
+          secret:
+            secretName: {{ .Values.database.secret_name }}
+        {{- end}}
+        {{- if .Values.s3_backend.enabled }}
+        - name: s3-credentials
+          secret:
+            secretName: {{ .Values.s3_backend.secret_name }}
+        {{- end}}
+        {{- if .Values.pvcBackend.enabled }}
+        - name: galaxy-ng-pvc
+          persistentVolumeClaim:
+            claimName: galaxy-ng-pvc
+        {{- end}}
+        {{- if include "galaxy-ng.redisCaMounted" . }}
+        - name: redis-ca
+          secret:
+            secretName: {{ .Values.redis.tls.caSecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end}}
+        - name: admin-password
+          secret:
+            secretName: galaxy-ng-admin-password
+      {{- if .Values.imagePullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecretName }}
+      {{- end}}

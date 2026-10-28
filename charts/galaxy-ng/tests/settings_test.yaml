@@ -1,0 +1,109 @@
+suite: settings.py
+templates:
+  - configmap.yaml
+tests:
+  - it: leaves LDAP out by default
+    asserts:
+      - notMatchRegex:
+          path: data["settings.py"]
+          pattern: (?i)ldap
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?s)AUTHENTICATION_BACKENDS = \[\s*"django\.contrib\.auth\.backends\.ModelBackend",
+
+  - it: adds the LDAP backend and settings when enabled
+    set:
+      ldap:
+        enabled: true
+        settings: AUTH_LDAP_SERVER_URI = 'ldaps://ldap.example.com:636'
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^import ldap$
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: '"django_auth_ldap\.backend\.LDAPBackend",'
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^AUTH_LDAP_SERVER_URI = 'ldaps://ldap\.example\.com:636'$
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: AUTH_LDAP_BIND_PASSWORD = os\.getenv\('AUTH_LDAP_BIND_PASSWORD'\)
+
+  - it: connects to Redis without TLS by default
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^REDIS_SSL = False$
+      - notMatchRegex:
+          path: data["settings.py"]
+          pattern: CA_CERTS
+
+  - it: writes REDIS_SSL_CA_CERTS (the key pulpcore reads) for a CA path
+    set:
+      redis.tls.enabled: true
+      redis.tls.caCertsPath: /etc/ssl/certs/ca-bundle.crt
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^REDIS_SSL = True$
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^REDIS_SSL_CA_CERTS = '/etc/ssl/certs/ca-bundle\.crt'$
+      - notMatchRegex:
+          path: data["settings.py"]
+          pattern: REDIS_TLS_CA_CERTS
+
+  - it: points REDIS_SSL_CA_CERTS at the mounted CA Secret
+    set:
+      redis.tls.enabled: true
+      redis.tls.caSecretName: valkey-ca
+      redis.tls.caCertsPath: /ignored/when/a/secret/is/set
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^REDIS_SSL_CA_CERTS = '/etc/pulp/redis-ca/ca\.crt'$
+
+  - it: uses the image trust store when no CA is given
+    set:
+      redis.tls.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: (?m)^REDIS_SSL = True$
+      - notMatchRegex:
+          path: data["settings.py"]
+          pattern: REDIS_SSL_CA_CERTS
+
+  - it: renders no cache settings without Redis
+    set:
+      redis.enabled: false
+    asserts:
+      - notMatchRegex:
+          path: data["settings.py"]
+          pattern: REDIS_|CACHE_ENABLED
+
+  - it: renders the database port
+    set:
+      database.port: "6432"
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: '"PORT": "6432",'
+
+  - it: accepts inline database credentials
+    set:
+      database.secret_name: ""
+      database.username: galaxy
+      database.password: example
+    asserts:
+      - matchRegex:
+          path: data["settings.py"]
+          pattern: '"USER": "galaxy",'
+
+  - it: fails without database credentials
+    set:
+      database.secret_name: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: either database.secret_name or database.username must be set

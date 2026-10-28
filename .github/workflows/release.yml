@@ -1,0 +1,156 @@
+name: Release Charts
+
+# Releases every chart whose Chart.yaml version has no git tag
+# <chart>-<version> yet: package, push to ghcr.io, sign, attest, tag.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - 'Makefile'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+# Never cancel a running release: a cancelled job can leave a pushed chart
+# without signature or tag.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # oci://ghcr.io/guided-traffic/helm-charts/<chart>
+  CHART_REPOSITORY: ghcr.io/${{ github.repository }}
+
+jobs:
+  plan:
+    # also for manual runs: only main publishes, matching the signing identity
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.plan.outputs.charts }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0  # tags
+
+      - name: Find unreleased chart versions
+        id: plan
+        run: |
+          charts=$(scripts/chart.sh release-plan)
+          echo "charts=$charts" >> "$GITHUB_OUTPUT"
+          echo "Unreleased: $charts" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.charts != '[]'
+    name: ${{ matrix.chart }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # git tag and GitHub release
+      packages: write      # push to ghcr.io
+      id-token: write      # keyless cosign signature, provenance
+      attestations: write  # provenance attestation
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.charts) }}
+    env:
+      CHART: ${{ matrix.chart }}
+      VERSION: ${{ matrix.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned tools
+        run: |
+          make tools
+          echo "HELM=$(make -s print-HELM)" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: make test CHARTS="$CHART"
+
+      - name: Package
+        run: |
+          make package CHARTS="$CHART"
+          test -f ".dist/$CHART-$VERSION.tgz"
+
+      - name: Log in to ghcr.io (cosign, attestation)
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to ghcr.io (helm)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | "$HELM" registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # OCI tags can be overwritten; a released version must not be. The git
+      # tag is missing, but the registry may still hold the version from a run
+      # that failed after the push (docs/developer/release.md, "Recovery").
+      - name: Refuse to overwrite a pushed version
+        run: |
+          if "$HELM" show chart "oci://$CHART_REPOSITORY/$CHART" --version "$VERSION" >/dev/null 2>&1; then
+            echo "::error::$CHART_REPOSITORY/$CHART:$VERSION already exists in the registry but has no git tag $CHART-$VERSION"
+            exit 1
+          fi
+
+      - name: Push
+        id: push
+        run: |
+          out=$("$HELM" push ".dist/$CHART-$VERSION.tgz" "oci://$CHART_REPOSITORY" 2>&1)
+          echo "$out"
+          digest=$(sed -n 's/^Digest: //p' <<<"$out")
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest in helm push output"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: 'v3.1.4'
+
+      - name: Sign (keyless)
+        run: cosign sign --yes "$CHART_REPOSITORY/$CHART@${{ steps.push.outputs.digest }}"
+
+      - name: Provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ${{ env.CHART_REPOSITORY }}/${{ matrix.chart }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/heads/main"
+          notes=$(cat <<EOF
+          \`\`\`bash
+          helm install $CHART oci://$CHART_REPOSITORY/$CHART --version $VERSION
+
+          cosign verify $CHART_REPOSITORY/$CHART@$DIGEST \\
+            --certificate-identity $identity \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+
+          Digest: \`$DIGEST\` — changes: [charts/$CHART](https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/charts/$CHART)
+          EOF
+          )
+          gh release create "$CHART-$VERSION" ".dist/$CHART-$VERSION.tgz" \
+            --target "$GITHUB_SHA" --title "$CHART $VERSION" --notes "$notes"
+
+      - name: Summary
+        run: |
+          {
+            echo "### $CHART $VERSION"
+            echo "- \`oci://$CHART_REPOSITORY/$CHART:$VERSION\`"
+            echo "- digest \`${{ steps.push.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
